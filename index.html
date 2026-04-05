@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+	<!DOCTYPE html>
 <html lang="en" dir="ltr" id="htmlRoot">
 <head>
 <meta charset="UTF-8">
@@ -321,9 +321,48 @@ label.field-label .req{color:var(--orange);margin-left:2px;}
   .form-grid{grid-template-columns:1fr;}
   .form-group.full,.form-group.span-2{grid-column:1;}
 }
+
+/* ── DASHBOARD */
+.dash-wrap{flex:1;overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:20px;}
+.dash-section-title{font-family:var(--ff-mono);font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:10px;}
+.dash-section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.kpi-grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+.kpi-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:600px){.kpi-grid,.kpi-grid-2,.kpi-grid-3{grid-template-columns:1fr;}}
+.kpi-card{background:var(--card);border:1px solid var(--border);padding:18px 20px;position:relative;overflow:hidden;}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--orange);}
+.kpi-card.green::before{background:var(--green);}
+.kpi-card.blue::before{background:var(--blue);}
+.kpi-card.red::before{background:var(--red);}
+.kpi-card.yellow::before{background:var(--yellow);}
+.kpi-card.purple::before{background:var(--purple);}
+.kpi-label{font-family:var(--ff-mono);font-size:10px;color:var(--muted2);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;}
+.kpi-value{font-family:var(--ff-display);font-size:34px;font-weight:800;color:var(--text);line-height:1;}
+.kpi-unit{font-family:var(--ff-mono);font-size:11px;color:var(--muted2);margin-left:4px;}
+.kpi-sub{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;}
+.kpi-sub-item{font-size:11px;color:var(--muted2);}
+.kpi-sub-item strong{color:var(--text);font-family:var(--ff-mono);}
+.kpi-divider{border:none;border-top:1px solid var(--border);margin:8px 0;}
+.kpi-tag{font-family:var(--ff-mono);font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+.prog-bar-wrap{margin-top:10px;}
+.prog-bar-bg{background:var(--border2);height:6px;border-radius:3px;overflow:hidden;}
+.prog-bar-fill{height:100%;background:var(--orange);border-radius:3px;transition:width .8s ease;}
+.prog-bar-fill.green{background:var(--green);}
+.prog-bar-fill.red{background:var(--red);}
+.prog-label{display:flex;justify-content:space-between;font-family:var(--ff-mono);font-size:10px;color:var(--muted2);margin-top:4px;}
+.chart-card{background:var(--card);border:1px solid var(--border);padding:20px;}
+.chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;}
+.chart-title{font-family:var(--ff-display);font-size:15px;font-weight:700;letter-spacing:1px;}
+.chart-toggle{display:flex;gap:6px;}
+.chart-toggle button{background:none;border:1px solid var(--border2);color:var(--muted2);padding:3px 10px;font-family:var(--ff-mono);font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:1px;}
+.chart-toggle button.active{background:var(--orange);border-color:var(--orange);color:white;}
+.chart-wrap{position:relative;height:260px;}
 </style>
 </head>
 <body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <!-- TOPBAR -->
 <div class="topbar">
@@ -348,6 +387,11 @@ label.field-label .req{color:var(--orange);margin-left:2px;}
   <!-- SIDEBAR -->
   <nav class="sidebar">
     <div class="sidebar-label" data-en="MODULES" data-ar="الأقسام">MODULES</div>
+    <div class="nav-item" onclick="showDashboard()" id="nav-dashboard">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span class="nav-label" data-en="Dashboard" data-ar="لوحة البيانات">Dashboard</span>
+    </div>
+    <div class="sidebar-divider"></div>
     <div class="nav-item active" onclick="showModule('fleet')" id="nav-fleet">
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>
       <span class="nav-label" data-en="Fleet Registry" data-ar="سجل الأسطول">Fleet Registry</span>
@@ -451,6 +495,409 @@ label.field-label .req{color:var(--orange);margin-left:2px;}
 // ═══════════════════════════════════════════════
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzwU7y87aE5BP2VnRrqZIqtQBYjmVlt69ARqaOX9kgWVdf4IbC2MvMvIVb6lBfZpKKP/exec';
 const PAGE_SIZE = 25;
+
+// ═══════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════
+let dashCharts = {};
+
+function showDashboard() {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('nav-dashboard').classList.add('active');
+  let pg = document.getElementById('page-dashboard');
+  if (!pg) {
+    pg = document.createElement('div');
+    pg.id = 'page-dashboard';
+    pg.className = 'page active';
+    pg.innerHTML = `
+      <div class="mod-header">
+        <div>
+          <div class="mod-title" data-en="DASHBOARD" data-ar="لوحة البيانات">DASHBOARD</div>
+          <div class="mod-subtitle" data-en="Live KPIs & Analytics" data-ar="مؤشرات الأداء الحية">Live KPIs & Analytics</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">⟳ REFRESH</button>
+      </div>
+      <div class="dash-wrap" id="dashContent">
+        <div style="text-align:center;padding:60px;color:var(--muted)"><span class="spinner"></span> Loading dashboard...</div>
+      </div>`;
+    document.getElementById('contentArea').appendChild(pg);
+  } else {
+    pg.classList.add('active');
+  }
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  const dc = document.getElementById('dashContent');
+  if (!dc) return;
+  dc.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)"><span class="spinner"></span> Loading data...</div>`;
+
+  // Destroy existing charts
+  Object.values(dashCharts).forEach(c => { try { c.destroy(); } catch(e){} });
+  dashCharts = {};
+
+  try {
+    // Load all needed sheets in parallel
+    const [genRes, onsiteRes, transferredRes, dsRes] = await Promise.all([
+      apiGet({ action: 'getSheet', sheet: 'gen_tracking' }),
+      apiGet({ action: 'getSheet', sheet: 'onsite_down' }),
+      apiGet({ action: 'getSheet', sheet: 'transferred' }),
+      apiGet({ action: 'getSheet', sheet: 'data_source' }),
+    ]);
+
+    const genRows       = (genRes.status === 'ok' ? genRes.rows : []).filter(r => r['Code'] && r['Code'] !== '#N/A');
+    const onsiteRows    = (onsiteRes.status === 'ok' ? onsiteRes.rows : []).filter(r => r['Code'] && r['Code'] !== '#N/A');
+    const transRows     = (transferredRes.status === 'ok' ? transferredRes.rows : []).filter(r => r['Code'] && r['Code'] !== '#N/A');
+    const dsRows        = (dsRes.status === 'ok' ? dsRes.rows : []);
+
+    renderDashboard(genRows, onsiteRows, transRows, dsRows);
+    setConnected(true);
+  } catch(e) {
+    dc.innerHTML = `<div style="text-align:center;padding:60px;color:var(--red)">Failed to load: ${e.message}</div>`;
+    setConnected(false);
+  }
+}
+
+function renderDashboard(genRows, onsiteRows, transRows, dsRows) {
+  const dc = document.getElementById('dashContent');
+
+  // ── CALCULATE KPIs ──────────────────────────────
+
+  // MTTR — Onsite Down (Down Start → Down Finish)
+  const onsiteCompleted = onsiteRows.filter(r => r['Down Start'] && r['Down Finish']);
+  let mttrOnsiteTotal = 0;
+  onsiteCompleted.forEach(r => {
+    const s = new Date(r['Down Start']), f = new Date(r['Down Finish']);
+    if (!isNaN(s) && !isNaN(f) && f > s) mttrOnsiteTotal += (f - s) / 86400000;
+  });
+  const mttrOnsite = onsiteCompleted.length > 0 ? (mttrOnsiteTotal / onsiteCompleted.length).toFixed(1) : '—';
+
+  // MTTR — Transferred (Days column)
+  const transWithDays = transRows.filter(r => r['Days'] && !isNaN(parseFloat(r['Days'])));
+  const mttrTransTotal = transWithDays.reduce((s, r) => s + parseFloat(r['Days'] || 0), 0);
+  const mttrTrans = transWithDays.length > 0 ? (mttrTransTotal / transWithDays.length).toFixed(1) : '—';
+
+  // MTBF — placeholder until operating hours sheet is ready
+  const mtbfOnsite = '—';
+  const mtbfTrans  = '—';
+
+  // Workshop cards by repair type
+  const overhaul     = genRows.filter(r => String(r['Repairs'] || '').toLowerCase().includes('overhaul'));
+  const partialRepair= genRows.filter(r => String(r['Repairs'] || '').toLowerCase().includes('partial'));
+  const ohDays       = overhaul.map(r => parseFloat(r['Days']) || 0).filter(d => d > 0);
+  const prDays       = partialRepair.map(r => parseFloat(r['Days']) || 0).filter(d => d > 0);
+  const ohAvg = ohDays.length ? (ohDays.reduce((a,b)=>a+b,0)/ohDays.length).toFixed(0) : 0;
+  const ohMax = ohDays.length ? Math.max(...ohDays) : 0;
+  const prAvg = prDays.length ? (prDays.reduce((a,b)=>a+b,0)/prDays.length).toFixed(0) : 0;
+  const prMax = prDays.length ? Math.max(...prDays) : 0;
+
+  // Onsite Down card
+  const onsiteDown = onsiteRows.filter(r => String(r['Status'] || '').toLowerCase() === 'down');
+  const odDays = onsiteDown.map(r => parseFloat(r['Duration']) || 0).filter(d => d > 0);
+  const odAvg  = odDays.length ? (odDays.reduce((a,b)=>a+b,0)/odDays.length).toFixed(0) : 0;
+  const odMax  = odDays.length ? Math.max(...odDays) : 0;
+
+  // Release Plan — current month from Data Source
+  const now = new Date();
+  const curYear  = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  let relPlan = null;
+  dsRows.forEach(r => {
+    const mon = r['Mon'] || r['Month'] || '';
+    const d = new Date(mon);
+    if (!isNaN(d) && d.getFullYear() === curYear && d.getMonth() + 1 === curMonth) relPlan = r;
+  });
+  const relPlanned = relPlan ? (parseFloat(relPlan['#'] || relPlan['# '] || 0)) : 0;
+  const relActual  = relPlan ? (parseFloat(relPlan['# Out'] || relPlan['#Out'] || 0)) : 0;
+  const relPct     = relPlanned > 0 ? Math.min(Math.round((relActual / relPlanned) * 100), 200) : 0;
+
+  // Release Plan bar chart data
+  const relLabels = [], relPlannedData = [], relActualData = [];
+  dsRows.slice(-24).forEach(r => {
+    const mon = r['Mon'] || r['Month'] || '';
+    if (!mon || mon === '#N/A') return;
+    relLabels.push(mon);
+    relPlannedData.push(parseFloat(r['#'] || 0));
+    relActualData.push(parseFloat(r['# Out'] || 0));
+  });
+
+  // Repairs per year chart (onsite_down)
+  const repairsByYear = {}, uniqueByYear = {};
+  onsiteRows.forEach(r => {
+    const ds = r['Down Start'] || r['Down Finish'] || '';
+    if (!ds) return;
+    const d = new Date(ds);
+    if (isNaN(d)) return;
+    const yr = d.getFullYear();
+    if (!repairsByYear[yr]) { repairsByYear[yr] = 0; uniqueByYear[yr] = new Set(); }
+    if (r['Down Finish']) { repairsByYear[yr]++; uniqueByYear[yr].add(r['Code']); }
+  });
+  const repairsByMonth = {};
+  onsiteRows.forEach(r => {
+    const ds = r['Down Finish'] || '';
+    if (!ds) return;
+    const d = new Date(ds);
+    if (isNaN(d)) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!repairsByMonth[key]) repairsByMonth[key] = { count: 0, unique: new Set() };
+    repairsByMonth[key].count++;
+    repairsByMonth[key].unique.add(r['Code']);
+  });
+
+  // Repair types per year (gen_tracking + transferred)
+  const repTypeYear = {};
+  [...genRows, ...transRows].forEach(r => {
+    const dateStr = r['Release Date'] || '';
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    if (isNaN(d)) return;
+    const yr = d.getFullYear();
+    const type = String(r['Repairs'] || r['Repair'] || '').trim();
+    if (!type) return;
+    if (!repTypeYear[yr]) repTypeYear[yr] = {};
+    repTypeYear[yr][type] = (repTypeYear[yr][type] || 0) + 1;
+  });
+  const repTypeMonth = {};
+  [...genRows, ...transRows].forEach(r => {
+    const dateStr = r['Release Date'] || '';
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    if (isNaN(d)) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const type = String(r['Repairs'] || r['Repair'] || '').trim();
+    if (!type) return;
+    if (!repTypeMonth[key]) repTypeMonth[key] = {};
+    repTypeMonth[key][type] = (repTypeMonth[key][type] || 0) + 1;
+  });
+
+  // ── RENDER HTML ─────────────────────────────────
+  dc.innerHTML = `
+    <!-- ROW 1: MTTR -->
+    <div class="dash-section-title">MTTR — Mean Time To Repair</div>
+    <div class="kpi-grid-2">
+      <div class="kpi-card blue">
+        <div class="kpi-label">MTTR — Onsite Down (Generators)</div>
+        <div class="kpi-value">${mttrOnsite}<span class="kpi-unit">days</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">Completed repairs: <strong>${onsiteCompleted.length}</strong></div>
+          <div class="kpi-sub-item">Total records: <strong>${onsiteRows.length}</strong></div>
+        </div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-label">MTTR — Transferred (Workshop)</div>
+        <div class="kpi-value">${mttrTrans}<span class="kpi-unit">days</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">Records with days: <strong>${transWithDays.length}</strong></div>
+          <div class="kpi-sub-item">Total transferred: <strong>${transRows.length}</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 2: MTBF -->
+    <div class="dash-section-title">MTBF — Mean Time Between Failures</div>
+    <div class="kpi-grid-2">
+      <div class="kpi-card" style="opacity:.6">
+        <div class="kpi-label">MTBF — Onsite Down</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub"><div class="kpi-sub-item">⏳ Waiting for operating hours sheet</div></div>
+      </div>
+      <div class="kpi-card" style="opacity:.6">
+        <div class="kpi-label">MTBF — Transferred</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub"><div class="kpi-sub-item">⏳ Waiting for operating hours sheet</div></div>
+      </div>
+    </div>
+
+    <!-- ROW 3: Workshop + Onsite + Release -->
+    <div class="dash-section-title">Workshop Status</div>
+    <div class="kpi-grid">
+      <div class="kpi-card purple">
+        <div class="kpi-label">Overhaul — In Workshop</div>
+        <div class="kpi-value">${overhaul.length}<span class="kpi-unit">units</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">Avg Days: <strong>${ohAvg}</strong></div>
+          <div class="kpi-sub-item">Max Days: <strong>${ohMax}</strong></div>
+        </div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="kpi-label">Partial Repair — In Workshop</div>
+        <div class="kpi-value">${partialRepair.length}<span class="kpi-unit">units</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">Avg Days: <strong>${prAvg}</strong></div>
+          <div class="kpi-sub-item">Max Days: <strong>${prMax}</strong></div>
+        </div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-label">Generators Down Onsite</div>
+        <div class="kpi-value">${onsiteDown.length}<span class="kpi-unit">units</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">Avg Days: <strong>${odAvg}</strong></div>
+          <div class="kpi-sub-item">Max Days: <strong>${odMax}</strong></div>
+        </div>
+      </div>
+      <div class="kpi-card ${relPct >= 100 ? 'green' : relPct >= 70 ? 'yellow' : 'red'}">
+        <div class="kpi-label">Release Plan — ${now.toLocaleString('en',{month:'long',year:'numeric'})}</div>
+        <div class="kpi-value">${relActual}<span class="kpi-unit">/ ${relPlanned}</span></div>
+        <div class="prog-bar-wrap">
+          <div class="prog-bar-bg"><div class="prog-bar-fill ${relPct>=100?'green':relPct>=70?'':'red'}" style="width:${Math.min(relPct,100)}%"></div></div>
+          <div class="prog-label"><span>Actual vs Plan</span><span>${relPct}%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHART 1: Release Plan -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title" data-en="Release Plan — Monthly" data-ar="خطة الإطلاق الشهرية">Release Plan — Monthly</div>
+      </div>
+      <div class="chart-wrap"><canvas id="chartRelease"></canvas></div>
+    </div>
+
+    <!-- CHART 2: Repairs per year (onsite) -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Onsite Repairs Completed</div>
+        <div class="chart-toggle">
+          <button class="active" id="btnRepYearly" onclick="setRepairView('yearly')">YEARLY</button>
+          <button id="btnRepMonthly" onclick="setRepairView('monthly')">MONTHLY</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chartRepairs"></canvas></div>
+    </div>
+
+    <!-- CHART 3: Repair types workshop -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Workshop Repair Types</div>
+        <div class="chart-toggle">
+          <button class="active" id="btnTypeYearly" onclick="setTypeView('yearly')">YEARLY</button>
+          <button id="btnTypeMonthly" onclick="setTypeView('monthly')">MONTHLY</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chartTypes"></canvas></div>
+    </div>
+  `;
+
+  // Store data for chart toggles
+  window._dashData = { repairsByYear, repairsByMonth, repTypeYear, repTypeMonth };
+
+  // Init charts
+  initReleaseChart(relLabels, relPlannedData, relActualData);
+  initRepairsChart('yearly');
+  initTypesChart('yearly');
+}
+
+// ── CHARTS ──────────────────────────────────────
+
+const CHART_DEFAULTS = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#8890AA', font: { family: 'DM Mono', size: 11 } } } },
+  scales: {
+    x: { ticks: { color: '#5A6280', font: { size: 10 } }, grid: { color: 'rgba(35,40,64,0.8)' } },
+    y: { ticks: { color: '#5A6280', font: { size: 10 } }, grid: { color: 'rgba(35,40,64,0.8)' } }
+  }
+};
+
+function initReleaseChart(labels, planned, actual) {
+  const ctx = document.getElementById('chartRelease');
+  if (!ctx) return;
+  dashCharts['release'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Planned', data: planned, backgroundColor: 'rgba(52,152,219,0.5)', borderColor: '#3498DB', borderWidth: 1 },
+        { label: 'Actual', data: actual, backgroundColor: 'rgba(245,107,10,0.7)', borderColor: '#F56B0A', borderWidth: 1 },
+      ]
+    },
+    options: { ...CHART_DEFAULTS }
+  });
+}
+
+function setRepairView(mode) {
+  document.getElementById('btnRepYearly').classList.toggle('active', mode === 'yearly');
+  document.getElementById('btnRepMonthly').classList.toggle('active', mode === 'monthly');
+  if (dashCharts['repairs']) { dashCharts['repairs'].destroy(); delete dashCharts['repairs']; }
+  initRepairsChart(mode);
+}
+
+function initRepairsChart(mode) {
+  const ctx = document.getElementById('chartRepairs');
+  if (!ctx) return;
+  const { repairsByYear, repairsByMonth } = window._dashData || {};
+  let labels, counts, uniques;
+  if (mode === 'yearly') {
+    const yrs = Object.keys(repairsByYear || {}).sort();
+    labels  = yrs;
+    counts  = yrs.map(y => repairsByYear[y]);
+    uniques = yrs.map(y => (repairsByYear[y] ? window._dashData.repairsByYear[y] : 0));
+    // unique codes per year
+    const uy = {};
+    (window._dashData.onsiteRowsRef || []).forEach(r => {
+      const ds = r['Down Finish'] || '';
+      if (!ds) return;
+      const d = new Date(ds);
+      if (isNaN(d)) return;
+      const yr = String(d.getFullYear());
+      if (!uy[yr]) uy[yr] = new Set();
+      uy[yr].add(r['Code']);
+    });
+    uniques = yrs.map(y => uy[y] ? uy[y].size : 0);
+  } else {
+    const keys = Object.keys(repairsByMonth || {}).sort();
+    labels  = keys;
+    counts  = keys.map(k => repairsByMonth[k].count);
+    uniques = keys.map(k => repairsByMonth[k].unique.size);
+  }
+  dashCharts['repairs'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Repairs Done', data: counts, backgroundColor: 'rgba(39,174,96,0.6)', borderColor: '#27AE60', borderWidth: 1 },
+        { label: 'Unique Units', data: uniques, backgroundColor: 'rgba(155,89,182,0.5)', borderColor: '#9B59B6', borderWidth: 1, type: 'bar' },
+      ]
+    },
+    options: { ...CHART_DEFAULTS }
+  });
+}
+
+function setTypeView(mode) {
+  document.getElementById('btnTypeYearly').classList.toggle('active', mode === 'yearly');
+  document.getElementById('btnTypeMonthly').classList.toggle('active', mode === 'monthly');
+  if (dashCharts['types']) { dashCharts['types'].destroy(); delete dashCharts['types']; }
+  initTypesChart(mode);
+}
+
+function initTypesChart(mode) {
+  const ctx = document.getElementById('chartTypes');
+  if (!ctx) return;
+  const { repTypeYear, repTypeMonth } = window._dashData || {};
+  const source = mode === 'yearly' ? repTypeYear : repTypeMonth;
+  const keys = Object.keys(source || {}).sort();
+
+  // Collect all unique repair types
+  const allTypes = new Set();
+  keys.forEach(k => Object.keys(source[k] || {}).forEach(t => allTypes.add(t)));
+  const types = Array.from(allTypes).filter(t => t);
+
+  const colors = ['rgba(245,107,10,0.7)','rgba(52,152,219,0.7)','rgba(155,89,182,0.7)','rgba(39,174,96,0.7)','rgba(243,156,18,0.7)'];
+
+  dashCharts['types'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: keys,
+      datasets: types.map((type, i) => ({
+        label: type,
+        data: keys.map(k => (source[k] && source[k][type]) || 0),
+        backgroundColor: colors[i % colors.length],
+        borderWidth: 1
+      }))
+    },
+    options: { ...CHART_DEFAULTS, scales: { ...CHART_DEFAULTS.scales, x: { ...CHART_DEFAULTS.scales.x, stacked: false }, y: { ...CHART_DEFAULTS.scales.y, stacked: false } } }
+  });
+}
 
 // ═══════════════════════════════════════════════
 //  TRANSLATIONS
