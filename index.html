@@ -392,7 +392,7 @@ label.field-label .req{color:var(--orange);margin-left:2px;}
       <span class="nav-label" data-en="Dashboard" data-ar="لوحة البيانات">Dashboard</span>
     </div>
     <div class="sidebar-divider"></div>
-    <div class="nav-item active" onclick="showModule('fleet')" id="nav-fleet">
+    <div class="nav-item" onclick="showModule('fleet')" id="nav-fleet">
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>
       <span class="nav-label" data-en="Fleet Registry" data-ar="سجل الأسطول">Fleet Registry</span>
       <span class="nav-count" id="cnt-fleet">—</span>
@@ -539,12 +539,15 @@ async function loadDashboard() {
       apiGet({ action: 'getSheet', sheet: 'gen_tracking' }),
       apiGet({ action: 'getSheet', sheet: 'onsite_down' }),
       apiGet({ action: 'getSheet', sheet: 'transferred' }),
-      apiGet({ action: 'getRange', sheet: 'data_source', range: 'V:AA' }),
+      apiGet({ action: 'getRange', sheet: 'data_source', startCol: 'V', endCol: 'AA', headerRow: 2 }),
     ]);
     const genRows    = (genRes.status === 'ok' ? genRes.rows : []).filter(r => r['Code'] && r['Code'] !== '#N/A');
     const onsiteRows = (onsiteRes.status === 'ok' ? onsiteRes.rows : []).filter(r => r['Code'] && r['Code'] !== '#N/A');
     const transRows  = (transferredRes.status === 'ok' ? transferredRes.rows : []).filter(r => r['Code'] && r['Code'] !== '#N/A');
     const dsRows     = (dsRes.status === 'ok' ? dsRes.rows : []);
+
+    window._rawDash = { genRows, onsiteRows, transRows, dsRows };
+    window._dashPeriod = window._dashPeriod || { from: null, to: null };
     renderDashboard(genRows, onsiteRows, transRows, dsRows);
     setConnected(true);
   } catch(e) {
@@ -553,11 +556,273 @@ async function loadDashboard() {
   }
 }
 
+function applyPeriodFilter() {
+  const from = document.getElementById('periodFrom').value;
+  const to   = document.getElementById('periodTo').value;
+  window._dashPeriod = { from, to };
+  const { genRows, onsiteRows, transRows, dsRows } = window._rawDash || {};
+  if (!onsiteRows) return;
+  const pd = window._parseDate;
+  const inPeriod = (dateStr) => {
+    const d = pd(dateStr);
+    if (!d) return false;
+    if (from && d < new Date(from + '-01')) return false;
+    if (to) { const t = new Date(to + '-01'); t.setMonth(t.getMonth()+1); if (d >= t) return false; }
+    return true;
+  };
+  const fo = (from||to) ? onsiteRows.filter(r => inPeriod(r['Down Start']) || inPeriod(r['Down Finish'])) : onsiteRows;
+  const ft = (from||to) ? transRows.filter(r => inPeriod(r['Release Date'])) : transRows;
+  Object.values(dashCharts).forEach(c => { try{c.destroy();}catch(e){} }); dashCharts = {};
+  renderDashboard(genRows, fo, ft, dsRows);
+}
+
+function clearPeriodFilter() {
+  const pf = document.getElementById('periodFrom');
+  const pt = document.getElementById('periodTo');
+  if (pf) pf.value = ''; if (pt) pt.value = '';
+  window._dashPeriod = { from: null, to: null };
+  const { genRows, onsiteRows, transRows, dsRows } = window._rawDash || {};
+  Object.values(dashCharts).forEach(c => { try{c.destroy();}catch(e){} }); dashCharts = {};
+  renderDashboard(genRows, onsiteRows, transRows, dsRows);
+}
+
 function renderDashboard(genRows, onsiteRows, transRows, dsRows) {
   const dc = document.getElementById('dashContent');
 
-  // ── ROBUST DATE PARSER (handles dd-MMM-yy, dd-MMM-yyyy, yyyy-mm-dd, etc.)
+  // ── DATE PARSER — handles dd-MMM-yy, dd-MMM-yyyy, yyyy-mm-dd, Date objects
   function parseDate(str) {
+    if (!str) return null;
+    if (str instanceof Date) return isNaN(str) ? null : str;
+    const s = String(str).trim();
+    if (!s || s === '#N/A' || s === '') return null;
+    // Try native
+    let d = new Date(s);
+    if (!isNaN(d) && d.getFullYear() > 1970) return d;
+    // dd-MMM-yy / dd-MMM-yyyy
+    const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    const m = s.match(/(\d{1,2})[-\/\s]([a-zA-Z]{3})[-\/\s](\d{2,4})/);
+    if (m) {
+      const day = parseInt(m[1]), mon = months[m[2].toLowerCase()];
+      let yr = parseInt(m[3]); if (yr < 100) yr += 2000;
+      if (mon !== undefined) return new Date(yr, mon, day);
+    }
+    return null;
+  }
+  window._parseDate = parseDate;
+
+  // ── MTTR Onsite
+  const onsiteCompleted = onsiteRows.filter(r => r['Down Start'] && r['Down Finish']);
+  let mttrOnsiteTotal = 0;
+  onsiteCompleted.forEach(r => {
+    const s = parseDate(r['Down Start']), f = parseDate(r['Down Finish']);
+    if (s && f && f > s) mttrOnsiteTotal += (f - s) / 86400000;
+  });
+  const mttrOnsite = onsiteCompleted.length > 0 ? (mttrOnsiteTotal / onsiteCompleted.length).toFixed(1) : '—';
+
+  // ── MTTR Transferred
+  const transWithDays = transRows.filter(r => r['Days'] !== undefined && r['Days'] !== '' && !isNaN(parseFloat(r['Days'])));
+  const mttrTrans = transWithDays.length > 0 ? (transWithDays.reduce((s,r) => s + parseFloat(r['Days']), 0) / transWithDays.length).toFixed(1) : '—';
+
+  // ── Workshop KPIs
+  const overhaul      = genRows.filter(r => String(r['Repairs']||'').toLowerCase().includes('overhaul'));
+  const partialRepair = genRows.filter(r => String(r['Repairs']||'').toLowerCase().includes('partial'));
+  const statOf = rows => {
+    const d = rows.map(r => parseFloat(r['Days'])||0).filter(v=>v>0);
+    return { avg: d.length?(d.reduce((a,b)=>a+b,0)/d.length).toFixed(0):0, max: d.length?Math.max(...d):0 };
+  };
+  const onsiteDown = onsiteRows.filter(r => String(r['Status']||'').toLowerCase()==='down');
+  const odDays = onsiteDown.map(r => parseFloat(r['Duration'])||0).filter(v=>v>0);
+  const odStat = { avg: odDays.length?(odDays.reduce((a,b)=>a+b,0)/odDays.length).toFixed(0):0, max: odDays.length?Math.max(...odDays):0 };
+
+  // ── Release Plan current month
+  const now = new Date();
+  const curY = now.getFullYear(), curM = now.getMonth()+1;
+  let relPlan = null;
+  dsRows.forEach(r => {
+    const keys = Object.keys(r).filter(k => k !== '_row');
+    // Try all column values for a parseable date
+    for (const k of keys) {
+      const d = parseDate(r[k]);
+      if (d && d.getFullYear() === curY && d.getMonth()+1 === curM) { relPlan = r; break; }
+    }
+  });
+  const getNum = (row, ...ks) => { if(!row) return 0; for(const k of ks){const v=parseFloat(row[k]);if(!isNaN(v))return v;} return 0; };
+  const relPlanned = getNum(relPlan,'#','# ','Planned','# lanne');
+  const relActual  = getNum(relPlan,'# Out','#Out','Actual');
+  const relPct     = relPlanned>0 ? Math.min(Math.round((relActual/relPlanned)*100),200) : 0;
+  const pctColor   = relPct>=100?'green':relPct>=70?'yellow':'red';
+
+  // ── Release chart data — use positional columns (X=#, Y=# Out) based on header index
+  const relLabels=[], relPlanData=[], relActData=[];
+  // Find header indices once from first row
+  let idxMon=-1, idxPlan=-1, idxAct=-1;
+  if (dsRows.length>0) {
+    const hdr = Object.keys(dsRows[0]).filter(k=>k!=='_row');
+    hdr.forEach((h,i)=>{
+      const hl = h.toLowerCase().trim();
+      if (hl==='mon' || hl==='month') idxMon=i;
+      if (hl===' #' || hl==='#') idxPlan=i;
+      if (hl==='# out') idxAct=i;
+    });
+    // Fallback: positional (W=1, X=2, Y=3 assuming V=0)
+    if (idxMon<0) idxMon=1;
+    if (idxPlan<0) idxPlan=2;
+    if (idxAct<0) idxAct=3;
+  }
+  dsRows.forEach(r => {
+    const vals = Object.values(r).filter((_,i) => Object.keys(r)[i] !== '_row');
+    const monStr = String(vals[idxMon]||'');
+    if (!monStr || monStr==='#N/A' || !parseDate(monStr)) return;
+    relLabels.push(monStr);
+    relPlanData.push(parseFloat(vals[idxPlan])||0);
+    relActData.push(parseFloat(vals[idxAct])||0);
+  });
+
+  // ── Repairs by year/month
+  const repByYear={}, repByMonth={};
+  onsiteRows.forEach(r => {
+    const df = parseDate(r['Down Finish']); if (!df) return;
+    const yr = String(df.getFullYear());
+    const mn = `${yr}-${String(df.getMonth()+1).padStart(2,'0')}`;
+    if (!repByYear[yr]) repByYear[yr] = {count:0,unique:new Set()};
+    if (!repByMonth[mn]) repByMonth[mn] = {count:0,unique:new Set()};
+    repByYear[yr].count++; repByYear[yr].unique.add(r['Code']);
+    repByMonth[mn].count++; repByMonth[mn].unique.add(r['Code']);
+  });
+
+  // ── Repair types from Transferred
+  const rtYear={}, rtMonth={};
+  transRows.forEach(r => {
+    const rd = parseDate(r['Release Date']); if (!rd) return;
+    const yr = String(rd.getFullYear());
+    const mn = `${yr}-${String(rd.getMonth()+1).padStart(2,'0')}`;
+    const tp = String(r['Repair']||r['Repairs']||'').trim();
+    if (!tp || tp==='#N/A') return;
+    if (!rtYear[yr]) rtYear[yr]={}; if (!rtMonth[mn]) rtMonth[mn]={};
+    rtYear[yr][tp]=(rtYear[yr][tp]||0)+1;
+    rtMonth[mn][tp]=(rtMonth[mn][tp]||0)+1;
+  });
+
+  const period = window._dashPeriod||{};
+  const periodLabel = (period.from||period.to) ? `${period.from||'...'} → ${period.to||'Now'}` : 'All Time';
+
+  dc.innerHTML = `
+    <!-- PERIOD FILTER -->
+    <div class="kpi-card" style="padding:14px 20px;">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <span style="font-family:var(--ff-mono);font-size:10px;color:var(--muted2);letter-spacing:1.5px;">PERIOD FILTER — MTTR / MTBF</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label style="font-family:var(--ff-mono);font-size:10px;color:var(--muted);">FROM</label>
+          <input type="month" id="periodFrom" class="field-input" style="width:145px;padding:5px 10px;font-size:12px;" value="${period.from||''}">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <label style="font-family:var(--ff-mono);font-size:10px;color:var(--muted);">TO</label>
+          <input type="month" id="periodTo" class="field-input" style="width:145px;padding:5px 10px;font-size:12px;" value="${period.to||''}">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="applyPeriodFilter()">APPLY</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearPeriodFilter()">CLEAR</button>
+        <span style="font-family:var(--ff-mono);font-size:10px;color:var(--orange);margin-left:auto;">${periodLabel}</span>
+      </div>
+    </div>
+
+    <div class="dash-section-title">MTTR — Mean Time To Repair</div>
+    <div class="kpi-grid-2">
+      <div class="kpi-card blue">
+        <div class="kpi-label">MTTR — Onsite Down Generators</div>
+        <div class="kpi-value">${mttrOnsite}<span class="kpi-unit">days</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">Completed: <strong>${onsiteCompleted.length}</strong></div>
+          <div class="kpi-sub-item">Total: <strong>${onsiteRows.length}</strong></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--ff-mono);">AVG(Down Finish − Down Start)</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-label">MTTR — Workshop (Transferred)</div>
+        <div class="kpi-value">${mttrTrans}<span class="kpi-unit">days</span></div>
+        <div class="kpi-sub">
+          <div class="kpi-sub-item">With data: <strong>${transWithDays.length}</strong></div>
+          <div class="kpi-sub-item">Total: <strong>${transRows.length}</strong></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--ff-mono);">AVG(Release Date − Entry Date)</div>
+      </div>
+    </div>
+
+    <div class="dash-section-title">MTBF — Mean Time Between Failures</div>
+    <div class="kpi-grid-2">
+      <div class="kpi-card" style="opacity:.55">
+        <div class="kpi-label">MTBF — Onsite Down</div>
+        <div class="kpi-value" style="font-size:22px;color:var(--muted)">Pending</div>
+        <div class="kpi-sub"><div class="kpi-sub-item">⏳ Awaiting operating hours sheet</div></div>
+      </div>
+      <div class="kpi-card" style="opacity:.55">
+        <div class="kpi-label">MTBF — Transferred</div>
+        <div class="kpi-value" style="font-size:22px;color:var(--muted)">Pending</div>
+        <div class="kpi-sub"><div class="kpi-sub-item">⏳ Awaiting operating hours sheet</div></div>
+      </div>
+    </div>
+
+    <div class="dash-section-title">Workshop & Field — Current State</div>
+    <div class="kpi-grid">
+      <div class="kpi-card purple">
+        <div class="kpi-label">Overhaul — In Workshop</div>
+        <div class="kpi-value">${overhaul.length}<span class="kpi-unit">units</span></div>
+        <div class="kpi-sub"><div class="kpi-sub-item">Avg: <strong>${statOf(overhaul).avg} days</strong></div><div class="kpi-sub-item">Max: <strong>${statOf(overhaul).max} days</strong></div></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Partial Repair — In Workshop</div>
+        <div class="kpi-value">${partialRepair.length}<span class="kpi-unit">units</span></div>
+        <div class="kpi-sub"><div class="kpi-sub-item">Avg: <strong>${statOf(partialRepair).avg} days</strong></div><div class="kpi-sub-item">Max: <strong>${statOf(partialRepair).max} days</strong></div></div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-label">Generators Down Onsite</div>
+        <div class="kpi-value">${onsiteDown.length}<span class="kpi-unit">units</span></div>
+        <div class="kpi-sub"><div class="kpi-sub-item">Avg: <strong>${odStat.avg} days</strong></div><div class="kpi-sub-item">Max: <strong>${odStat.max} days</strong></div></div>
+      </div>
+      <div class="kpi-card ${pctColor}">
+        <div class="kpi-label">Release Plan — ${now.toLocaleString('en',{month:'long',year:'numeric'})}</div>
+        <div class="kpi-value">${relActual}<span class="kpi-unit">/ ${relPlanned}</span></div>
+        <div class="prog-bar-wrap">
+          <div class="prog-bar-bg"><div class="prog-bar-fill ${pctColor}" style="width:${Math.min(relPct,100)}%"></div></div>
+          <div class="prog-label"><span>Achievement</span><span>${relPct}%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header"><div class="chart-title">Release Plan — Monthly (Planned vs Actual)</div></div>
+      <div class="chart-wrap"><canvas id="chartRelease"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Onsite Repairs Completed</div>
+        <div class="chart-toggle">
+          <button class="active" id="btnRepYearly" onclick="setRepairView('yearly')">YEARLY</button>
+          <button id="btnRepMonthly" onclick="setRepairView('monthly')">MONTHLY</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chartRepairs"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Workshop Repair Types (Transferred)</div>
+        <div class="chart-toggle">
+          <button class="active" id="btnTypeYearly" onclick="setTypeView('yearly')">YEARLY</button>
+          <button id="btnTypeMonthly" onclick="setTypeView('monthly')">MONTHLY</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="chartTypes"></canvas></div>
+    </div>
+  `;
+
+  window._dashData = { repByYear, repByMonth, rtYear, rtMonth };
+  setTimeout(() => {
+    initReleaseChart(relLabels, relPlanData, relActData);
+    initRepairsChart('yearly');
+    initTypesChart('yearly');
+  }, 60);
+}
     if (!str) return null;
     const s = String(str).trim();
     if (!s || s === '#N/A') return null;
@@ -828,29 +1093,27 @@ function setRepairView(mode) {
 function initRepairsChart(mode) {
   const ctx = document.getElementById('chartRepairs');
   if (!ctx) return;
-  const src = mode === 'yearly' ? window._dashData.repairsByYear : window._dashData.repairsByMonth;
+  const src = mode === 'yearly' ? window._dashData.repByYear : window._dashData.repByMonth;
   const keys = Object.keys(src || {}).sort();
   if (!keys.length) {
-    ctx.parentElement.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:12px;">No repair data with completed dates found.</div>';
+    ctx.closest('.chart-wrap').innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:12px;">No completed repair data found (no Down Finish dates).</div>';
     return;
   }
-  const counts  = keys.map(k => src[k].count);
-  const uniques = keys.map(k => src[k].unique.size);
   dashCharts['repairs'] = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: keys,
       datasets: [
-        { label: 'Repairs Done', data: counts, backgroundColor: 'rgba(39,174,96,0.65)', borderColor: '#27AE60', borderWidth: 1, yAxisID: 'y' },
-        { label: 'Unique Units', data: uniques, backgroundColor: 'rgba(155,89,182,0.65)', borderColor: '#9B59B6', borderWidth: 2, type: 'line', yAxisID: 'y2', tension: 0.3, fill: false, pointRadius: 4 },
+        { label: 'Repairs Done', data: keys.map(k=>src[k].count), backgroundColor:'rgba(39,174,96,0.65)', borderColor:'#27AE60', borderWidth:1, yAxisID:'y' },
+        { label: 'Unique Units', data: keys.map(k=>src[k].unique.size), type:'line', borderColor:'#9B59B6', backgroundColor:'rgba(155,89,182,0.15)', borderWidth:2, pointRadius:4, yAxisID:'y2', tension:0.3, fill:false },
       ]
     },
     options: {
       ...CHART_DEFAULTS,
       scales: {
         x: { ...CHART_DEFAULTS.scales.x },
-        y: { ...CHART_DEFAULTS.scales.y, position: 'left', title: { display: true, text: 'Repairs Done', color: '#27AE60', font: { size: 10 } } },
-        y2: { ...CHART_DEFAULTS.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Unique Units', color: '#9B59B6', font: { size: 10 } } }
+        y:  { ...CHART_DEFAULTS.scales.y, position:'left',  title:{display:true,text:'Repairs Done', color:'#27AE60',font:{size:10}} },
+        y2: { ...CHART_DEFAULTS.scales.y, position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Unique Units',color:'#9B59B6',font:{size:10}} }
       }
     }
   });
@@ -866,10 +1129,10 @@ function setTypeView(mode) {
 function initTypesChart(mode) {
   const ctx = document.getElementById('chartTypes');
   if (!ctx) return;
-  const src = mode === 'yearly' ? window._dashData.repTypeYear : window._dashData.repTypeMonth;
+  const src = mode === 'yearly' ? window._dashData.rtYear : window._dashData.rtMonth;
   const keys = Object.keys(src || {}).sort();
   if (!keys.length) {
-    ctx.parentElement.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:12px;">No repair type data found in Transferred sheet.</div>';
+    ctx.closest('.chart-wrap').innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:12px;">No repair type data found. Check Release Date in Transferred sheet.</div>';
     return;
   }
   const allTypes = new Set();
@@ -880,10 +1143,10 @@ function initTypesChart(mode) {
     type: 'bar',
     data: {
       labels: keys,
-      datasets: types.map((type, i) => ({
-        label: type,
-        data: keys.map(k => (src[k][type] || 0)),
-        backgroundColor: colors[i % colors.length],
+      datasets: types.map((t,i) => ({
+        label: t,
+        data: keys.map(k => src[k][t]||0),
+        backgroundColor: colors[i%colors.length],
         borderWidth: 1
       }))
     },
@@ -1592,7 +1855,7 @@ function showToast(msg, type = '') {
 //  INIT
 // ═══════════════════════════════════════════════
 buildPages();
-loadModule('fleet');
+showDashboard();
 </script>
 </body>
 </html>
